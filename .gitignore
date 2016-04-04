@@ -10,3 +10,7 @@
 
 # Executables
 *.exe
+
+# Output and log files
+*.dat
+*.log
