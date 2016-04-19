@@ -88,6 +88,9 @@ FILE* output_file;
 // String buffer
 char* strbuf;
 
+// For timestamps
+time_t raw_time;
+
 // =====================================================================
 
 // Populates the strains array by reading the corresponding datafile
@@ -163,7 +166,7 @@ void load_antagonisms() {
       exit(1);
     }
   }
-  printf("OK\n");
+  fprintf(log_file, "OK\n");
 
   // Check receiver degrees
   fprintf(log_file, "Checking receiver degrees ... ");
@@ -178,7 +181,7 @@ void load_antagonisms() {
       exit(1);
     }
   }
-  fprintf(log_file, "Degrees OK\n");
+  fprintf(log_file, "OK\n");
   
 	infile.close();
   
@@ -306,21 +309,35 @@ void move_bacteria() {
 void bacteria_death() {
 
   Bacterium* bac;
-  unsigned int idx, i, size;
+  unsigned int i;
 
-  size = bacteria_list.size();
-  idx = 0;
-  for (i = 0; i < size; i++) {
-    bac = bacteria_list[idx];
-    if (all_die || !bac->isAtFoodSource) {
+  for (i = 0; i < bacteria_list.size(); i++) {
+    bac = bacteria_list[i];
+    if (bac->isAlive && (all_die || !bac->isAtFoodSource)) {
       if (randreal() <= bac->strain->death_rate) {
-        remove_bacterium(idx);
-      } else {
-        idx++;
+        bac->isAlive = false;
       }
     }
   }
   
+}
+
+// =====================================================================
+
+// Clean up dead bacteria (by removing them from the bacteria list)
+void cleanup_dead() {
+
+  unsigned int idx, i;
+
+  idx = 0;
+  for (i = 0; i < bacteria_list.size(); i++) {
+    if (!bacteria_list[idx]->isAlive) {
+      remove_bacterium(idx);
+    } else {
+      idx++;
+    }    
+  }
+
 }
 
 // =====================================================================
@@ -370,36 +387,79 @@ void food_sources_interactions() {
 
   FoodSource* fs = NULL;
   Bacterium* bac = NULL;
-  unsigned int idx, size, num_bacs, i, j, k, will_eat;
+  Bacterium* bac2 = NULL;
+  unsigned int idx, idx2, size, num_bacs, i, j, k, num_will_eat;
 
-  bool verbose = false;   // for debug
+  bool debug = true;
   
-  size = food_list.size();
+  // Loop over all food sources
   idx = 0;
+  size = food_list.size();
   for (k = 0; k < size; k++) {
     fs = food_list[idx];
-
+   
+    // Bacteria count at this food source
     num_bacs = (int)fs->bacteriaHere.size();
-    if (verbose) fprintf(log_file, "Source %i at %i,%i with %i rations has %i bacteria\n", idx, fs->x, fs->y, fs->rations, num_bacs);      
+    if (debug) printf("Source %i at %i,%i with %i rations has %i bacteria\n", idx, fs->x, fs->y, fs->rations, num_bacs);
     if (num_bacs == 0) continue;
 
     // Antagonisms
     if (consider_antagonism) {
       
+      // Simplest mode: for each bacteria, check all other bacteria
+      // at the food source. If it antognizes any, it kills it and
+      // reproduces
+      for (i = 0; i < num_bacs; i++) {
+        bac = fs->bacteriaHere[i];
+        if (bac->isAlive) {
+
+          for (j = 0; j < num_bacs; j++) {
+            if (i == j) continue;
+            bac2 = fs->bacteriaHere[j];
+            if (bac2->isAlive) {
+              
+              // Check if bac antagonizes bac2
+              if (antagonisms[bac->strain->ID][bac2->strain->ID]) {
+                // finish him!
+                bac2->isAlive = false;
+                // reproduce - spoils of combat!
+                add_bacterium(bac->strain, bac->x, bac->y);
+              }
+              
+            }
+          }
+
+        }
+      }
+
+      // Cleanup the carnage at this food source
+      // (won't eliminate the bacteria from the global list yet though)
+      idx2 = 0;
+      size = fs->bacteriaHere.size();
+      for (i = 0; i < size; i++) {
+        if (!fs->bacteriaHere[idx2]->isAlive) {
+          fs->bacteriaHere[idx2] = fs->bacteriaHere.back();
+          fs->bacteriaHere.pop_back();
+        } else {
+          idx2++;
+        }
+      }
+      num_bacs = (int)fs->bacteriaHere.size();
+
     }
 
-    // Check food
+    // Check available food at this food source
     if (fs->rations < num_bacs) {
 
       // If not enough food for everyone, randomly select who will eat
-      will_eat = fs->rations;
+      num_will_eat = fs->rations;
 
       // Partial Fisher-Yates shuffle
-      for (i = 0; i < will_eat; i++) {
+      for (i = 0; i < num_will_eat; i++) {
         j = randint(i,num_bacs-1);
-        if (verbose) {
-          fprintf(log_file, "i=%i <-> j=%i ", i, j); fflush(stdout);
-          fprintf(log_file, "| %i\n", fs->bacteriaHere[j]->strain->ID);
+        if (debug) {
+          printf("i=%i <-> j=%i ", i, j); fflush(stdout);
+          printf("| %i\n", fs->bacteriaHere[j]->strain->ID);
         }
         if (j != i) {
           bac = fs->bacteriaHere[j];
@@ -411,29 +471,28 @@ void food_sources_interactions() {
     } else {
       
       // If enough food, everyone gets to eat
-      will_eat = num_bacs;
+      num_will_eat = num_bacs;
       
     }
-
-    if (verbose) printf("%i bacteria will eat\n", will_eat);
+    if (debug) printf("%i bacteria will eat\n", num_will_eat);
     
     // Now feed the bacteria, reducing the food source size, and let
     // the fed bacteria have a chance to reproduce
-    if (verbose) printf("Bacteria that reproduced: ");
-    for (i = 0; i < will_eat; i++) {
+    if (debug) printf("Bacteria that reproduced: ");
+    for (i = 0; i < num_will_eat; i++) {
       fs->rations--;
       bac = fs->bacteriaHere[i];
       if (randreal() <= bac->strain->growth_rate) {
-        if (verbose) fprintf(log_file, "%i ", bac->ID);
-        add_bacterium(bac->strain, randint(1,grid_size), randint(1,grid_size));
+        if (debug) printf("%i ", bac->ID);
+        add_bacterium(bac->strain, bac->x, bac->y);
       }
     }
-    if (verbose) printf("\n");
+    if (debug) printf("\n");
     
     // If the food source is exhausted, remove it
     if (fs->rations == 0) {
       remove_food_source(idx);
-      if (verbose) fprintf(log_file, "Removed food source (%i left)\n", (int)food_list.size());
+      if (debug) printf("Removed food source (%i left)\n", (int)food_list.size());
     } else {
       idx++;
     }
@@ -505,7 +564,7 @@ std::string get_next_line(std::ifstream& file, const char* param_name) {
 
   char firstchar;
   std::string line;
-  int i;
+  unsigned int i;
 
   while (std::getline(file, line)) {
 
@@ -617,17 +676,19 @@ void data_output() {
 
 // =====================================================================
 
-// Logs a message to the logfile, echoing to screen if enabled
-void log(const char* message) {
-  
+// Logs a message to the logfile, echoing to screen if requested
+void log(const char* message, bool echo_stdout) {
   fputs(message, log_file);
-  if (report_to_screen) fputs(message, stdout);
-  
+  if (echo_stdout) fputs(message, stdout); 
 }
 
-// =====================================================================
-// =====================================================================
-// =====================================================================
+// Wrapper for the above, echoing to stdout if report_to_screen is true
+void log(const char* message) {
+  log(message, report_to_screen);
+}
+
+// #####################################################################
+// #####################################################################
 
 int main (int argc, char** argv) {
 
@@ -635,24 +696,28 @@ int main (int argc, char** argv) {
   if (argc != 2) {
     printf("Error! Must provide a parameters filename as first argument\n");
     exit(EXIT_FAILURE);
+  } else {
+    raw_time = time(NULL);
+    printf(">> %s", ctime(&raw_time));
   }
   params_fname = new char[strlen(argv[1])];
   strcpy(params_fname, argv[1]);
-  printf(">> Reading %s ...\n", params_fname);
+  printf(">> Reading parameters file %s ...\n", params_fname);
   load_parameters(params_fname);
-  printf(">> Parameters read successfully\n");
   
-  // Open files
+  // Open log and data files
   log_file = fopen(log_fname,"w");
   output_file = fopen(output_fname,"w");
-  
   if (!report_to_screen) {
     printf("Writing further log output to %s\n", log_fname);
   }
   strbuf = new char[256];
+  raw_time = time(NULL);
+  sprintf(strbuf, ">> %s", ctime(&raw_time)); log(strbuf, false);
+  sprintf(strbuf, ">> Read parameters file %s ...\n", params_fname); log(strbuf, false);
 
   // Report parameters
-  sprintf(strbuf, ">> Loaded parameters from %s\n", params_fname); log(strbuf);
+  sprintf(strbuf, "grid_size = %i\n", grid_size); log(strbuf);
   sprintf(strbuf, "grid_size = %i\n", grid_size); log(strbuf);
   sprintf(strbuf, "num_cycles = %i\n", num_cycles); log(strbuf);
   sprintf(strbuf, "growth_multiplier = %f\n", growth_multiplier); log(strbuf);
@@ -674,10 +739,7 @@ int main (int argc, char** argv) {
   sprintf(strbuf, "food_source_spawn_rate = %f\n", food_source_spawn_rate); log(strbuf);
   sprintf(strbuf, "start_population_per_strain = %i\n", start_population_per_strain); log(strbuf);
   sprintf(strbuf, "start_num_food_sources = %i\n", start_num_food_sources); log(strbuf);
-
-  // Begin initializations
-  time_t raw_time = time(NULL);
-  sprintf(strbuf, ">> %s", ctime(&raw_time)); log(strbuf);
+  log(">> Parameters loaded successfully\n");
 
   // Allocate data arrays
   do_allocations();
@@ -702,7 +764,7 @@ int main (int argc, char** argv) {
   if (use_real_growth) {
     log(">> Using measured growth rates\n");
   } else {
-    log(">> Computing growth rates using linear relation ...\n");
+    log(">> Computing growth rates from sender degrees ...\n");
     compute_growth_rates();
   }
   
@@ -714,12 +776,13 @@ int main (int argc, char** argv) {
   compute_strain_counts();
   
   // Create food sources
-  log(">> Creating bacteria ...\n");
+  log(">> Creating food sources ...\n");
   create_starting_food();
   sprintf(strbuf, "Food sources: %i\n", (int)food_list.size()); log(strbuf);
   flag_bacteria_at_food_sources();
 
-  // Ready
+  // Ready!
+  log(">> READY. Starting simulation ...\n");
  
   // Main loop over cycles
   for (cycle = 1; cycle <= num_cycles; cycle++) {
@@ -736,6 +799,8 @@ int main (int argc, char** argv) {
     food_sources_interactions();
 
     bacteria_death();
+
+    cleanup_dead();
     
     spawn_food_sources();
 
