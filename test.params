@@ -10,7 +10,7 @@
 100
 
 # Number of cycles to simulate
-100
+10000
 
 # Global growth multiplier
 1.0
@@ -24,7 +24,7 @@
 
 ## Simulation output
 
-# Report simulation progress to screen?
+# Full simulation progress report to screen?
 1
 
 # Filename for log
@@ -50,7 +50,7 @@ strains.dat
 ## Antagonism
 
 # Consider antagonisms?
-1
+0
 
 # Filename of the antagonisms table
 # (ignored if antagonisms disabled, but don't leave blank)

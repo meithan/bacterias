@@ -56,8 +56,8 @@ int start_num_food_sources;        // Starting number of food source
 // Current cycle number
 int cycle;
 
-// Counts bacteria that ever lived
-int bac_counter;
+// Unique bacteria nondecreasing id counter
+int global_bac_counter;
 
 // Seed of the RNG
 unsigned int global_seed;
@@ -90,6 +90,9 @@ char* strbuf;
 
 // For timestamps
 time_t raw_time;
+
+// DEBUGGING
+const bool global_debug = true;
 
 // =====================================================================
 
@@ -206,17 +209,22 @@ void compute_growth_rates() {
 
 // Adds a new bacterium of strain at (x,y)
 void add_bacterium(Strain* strain, int x, int y) {
-  bacteria_list.push_back(new Bacterium(bac_counter, strain, x, y));
-  bac_counter++;
+  printf("\nCreating bacterium #%i of strain %i (%s)", global_bac_counter, strain->ID, strain->name.c_str());
+  bacteria_list.push_back(new Bacterium(global_bac_counter, strain, x, y));
+  global_bac_counter++;
 }
 
 // Removes the bacterium residing at 'idx' in the bacteria_list,
 // freeing its memory use
-void remove_bacterium(int idx) {
+void remove_bacterium(unsigned int idx) {
+  if (global_debug) {
+    printf("Removing bacterium at idx %i - ", idx);
+    bacteria_list[idx]->repr(strbuf);
+    printf("%s\n", strbuf);
+  }
   delete bacteria_list[idx];
   bacteria_list[idx] = bacteria_list.back();
   bacteria_list.pop_back();
-//  bacteria_list.erase(bacteria_list.begin()+idx);
 }
 
 // =====================================================================
@@ -227,12 +235,13 @@ void add_food_source(int x, int y, double radius, int rations) {
 }
 
 // Removes the food source residing at 'idx' in the food_list
-void remove_food_source(int idx) {
-//  printf("Removing food source %i\n", idx);
+void remove_food_source(unsigned int idx) {
+  if (global_debug) {
+    printf("Removing food source at idx %i", idx);
+  }
   delete food_list[idx];
   food_list[idx] = food_list.back();
   food_list.pop_back();
-//  food_list.erase(food_list.begin()+idx);
 }
 
 // =====================================================================
@@ -316,6 +325,10 @@ void bacteria_death() {
     if (bac->isAlive && (all_die || !bac->isAtFoodSource)) {
       if (randreal() <= bac->strain->death_rate) {
         bac->isAlive = false;
+        if (global_debug) {
+          bac->repr(strbuf);
+          printf("Died: %s\n", strbuf);
+        }
       }
     }
   }
@@ -325,17 +338,41 @@ void bacteria_death() {
 // =====================================================================
 
 // Clean up dead bacteria (by removing them from the bacteria list)
-void cleanup_dead() {
+void cleanup_dead_bacteria() {
 
-  unsigned int idx, i;
+  unsigned int idx, size, i;
 
   idx = 0;
-  for (i = 0; i < bacteria_list.size(); i++) {
+  size = bacteria_list.size();
+  for (i = 0; i < size; i++) {
     if (!bacteria_list[idx]->isAlive) {
       remove_bacterium(idx);
     } else {
       idx++;
-    }    
+    }     
+  }
+
+}
+// =====================================================================
+
+// Clean up empty food sources (by removing them from the food sources list)
+void cleanup_empty_food_sources() {
+
+  unsigned int idx, size, i;  
+  
+  const bool debug = false;
+  
+  idx = 0;
+  size = food_list.size();
+  for (i = 0; i < size; i++) {
+    // If the food source is exhausted, remove it
+    if (food_list[idx]->rations == 0) {
+      remove_food_source(idx);
+      if (debug) printf("Removed food source #%i (%i left)\n", idx, (int)food_list.size());
+    } else {
+      idx++;
+    }
+
   }
 
 }
@@ -348,12 +385,13 @@ void flag_bacteria_at_food_sources() {
 
   Bacterium* bac;
   FoodSource* fs;
-  unsigned int i, j, counter; 
+  unsigned int i, j, count; 
 
+  // Clear food sources bacteria lists
   for (i = 0; j < food_list.size(); j++)
     food_list[j]->clearBacteriaHere();
 
-  counter = 0;
+  count = 0;
   for (i = 0; i < bacteria_list.size(); i++) {
     bac = bacteria_list[i];
     bac->isAtFoodSource = false;
@@ -365,7 +403,10 @@ void flag_bacteria_at_food_sources() {
         fs->bacteriaHere.push_back(bac);
         if (!bac->isAtFoodSource) {
           bac->isAtFoodSource = true;
-          counter++;
+          count++;
+        }
+        if (global_debug) {
+          printf("Bacterium %i found at food source %i,%i\n", bac->ID, fs->x, fs->y);
         }
       }
       
@@ -388,20 +429,29 @@ void food_sources_interactions() {
   FoodSource* fs = NULL;
   Bacterium* bac = NULL;
   Bacterium* bac2 = NULL;
-  unsigned int idx, idx2, size, num_bacs, i, j, k, num_will_eat;
+  unsigned int idx, num_fs, num_bacs, size, i, j, k, num_will_eat;
 
-  bool debug = true;
+  const bool debug = true;
   
   // Loop over all food sources
-  idx = 0;
-  size = food_list.size();
-  for (k = 0; k < size; k++) {
-    fs = food_list[idx];
+  num_fs = food_list.size();
+  for (k = 0; k < num_fs; k++) {
+    fs = food_list[k];
    
     // Bacteria count at this food source
     num_bacs = (int)fs->bacteriaHere.size();
-    if (debug) printf("Source %i at %i,%i with %i rations has %i bacteria\n", idx, fs->x, fs->y, fs->rations, num_bacs);
+    if (debug) printf("\n> Source %i at %i,%i with %i rations has %i bacteria\n", k, fs->x, fs->y, fs->rations, num_bacs);
     if (num_bacs == 0) continue;
+
+    if (debug) {
+      printf("Bacteria at this food source:");
+      for (i = 0; i < num_bacs; i++) {
+        bac = fs->bacteriaHere[i];
+        bac->repr(strbuf);
+        printf("\n%4i:   %s", i, strbuf);
+      }
+      printf("\n");
+    }
 
     // Antagonisms
     if (consider_antagonism) {
@@ -432,19 +482,22 @@ void food_sources_interactions() {
         }
       }
 
-      // Cleanup the carnage at this food source
-      // (won't eliminate the bacteria from the global list yet though)
-      idx2 = 0;
+      // Cleanup the CARNAGE at this food source
+      // (won't eliminate the bacteria from the global list though)
+      idx = 0;
       size = fs->bacteriaHere.size();
       for (i = 0; i < size; i++) {
-        if (!fs->bacteriaHere[idx2]->isAlive) {
-          fs->bacteriaHere[idx2] = fs->bacteriaHere.back();
+        if (!fs->bacteriaHere[idx]->isAlive) {
+          fs->bacteriaHere[idx] = fs->bacteriaHere.back();
           fs->bacteriaHere.pop_back();
         } else {
-          idx2++;
+          idx++;
         }
       }
+      
+      // Update bacteria count at food source
       num_bacs = (int)fs->bacteriaHere.size();
+      if (debug) printf("After antagonisms, source has %i bacteria\n", num_bacs);
 
     }
 
@@ -453,6 +506,7 @@ void food_sources_interactions() {
 
       // If not enough food for everyone, randomly select who will eat
       num_will_eat = fs->rations;
+      if (debug) printf("Insufficient food, selecting lucky bacteria\n");
 
       // Partial Fisher-Yates shuffle
       for (i = 0; i < num_will_eat; i++) {
@@ -472,9 +526,9 @@ void food_sources_interactions() {
       
       // If enough food, everyone gets to eat
       num_will_eat = num_bacs;
+      if (debug) printf("Enough food for all %i bacteria\n", num_will_eat);
       
     }
-    if (debug) printf("%i bacteria will eat\n", num_will_eat);
     
     // Now feed the bacteria, reducing the food source size, and let
     // the fed bacteria have a chance to reproduce
@@ -483,19 +537,14 @@ void food_sources_interactions() {
       fs->rations--;
       bac = fs->bacteriaHere[i];
       if (randreal() <= bac->strain->growth_rate) {
-        if (debug) printf("%i ", bac->ID);
+        if (debug) {
+          bac->repr(strbuf);
+          printf("\n%s", strbuf);
+        }
         add_bacterium(bac->strain, bac->x, bac->y);
       }
     }
     if (debug) printf("\n");
-    
-    // If the food source is exhausted, remove it
-    if (fs->rations == 0) {
-      remove_food_source(idx);
-      if (debug) printf("Removed food source (%i left)\n", (int)food_list.size());
-    } else {
-      idx++;
-    }
     
   }
 
@@ -746,7 +795,8 @@ int main (int argc, char** argv) {
   log(">> Data arrays allocated\n");
   
   // Set RNG seed
-  reset_seed();
+  set_seed(1605641402);
+//  reset_seed();
   sprintf(strbuf, ">> RNG seed: %u\n", global_seed); log(strbuf);
   
   // Create strains using data from file
@@ -769,7 +819,7 @@ int main (int argc, char** argv) {
   }
   
   // Create starting bacteria
-  bac_counter = 0;
+  global_bac_counter = 0;
   log(">> Creating bacteria ...\n");
   create_starting_bacteria();
   sprintf(strbuf, "Population: %i\n", (int)bacteria_list.size()); log(strbuf);
@@ -786,7 +836,7 @@ int main (int argc, char** argv) {
  
   // Main loop over cycles
   for (cycle = 1; cycle <= num_cycles; cycle++) {
-
+    
     move_bacteria();
 
     flag_bacteria_at_food_sources();
@@ -800,17 +850,22 @@ int main (int argc, char** argv) {
 
     bacteria_death();
 
-    cleanup_dead();
-    
-    spawn_food_sources();
+    cleanup_dead_bacteria();
+
+    cleanup_empty_food_sources();
 
     compute_strain_counts();
-    
-    sprintf(strbuf, "Cycle %i, %i bacteria, %i sources\n", cycle, (int)bacteria_list.size(), (int)food_list.size());
-    log(strbuf);
+
+    spawn_food_sources();
     
     if (cycle % output_interval == 0) {
       data_output();
+    }    
+    
+    sprintf(strbuf, "Cycle %i, %i bacteria, %i sources\n", cycle, (int)bacteria_list.size(), (int)food_list.size());
+    log(strbuf);
+    if (!report_to_screen && (cycle % int(num_cycles/100) == 0)) {
+      printf("Cycle %i, %i bacteria, %i sources\n", cycle, (int)bacteria_list.size(), (int)food_list.size());  
     }
 
   }

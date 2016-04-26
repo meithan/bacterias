@@ -52,6 +52,11 @@ class Bacterium {
     }
   }
   
+  // Returns a representation of the bacterium in the provided C string
+  void repr(char* buf) {
+    sprintf(buf, "#%-5i at %i,%i  (%2i | %s)", ID, x, y, strain->ID, strain->name.c_str());
+  }
+  
 };
   
 #endif // BACTERIUM_H
