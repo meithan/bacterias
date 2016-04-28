@@ -411,9 +411,13 @@ void food_sources_interactions() {
   Bacterium* bac2 = NULL;
   unsigned int fs_idx, idx2, size, num_bacs, i, j, num_will_eat;
   char strbuf[256];
+  const int REWARD_AUTOMATIC = 0;
+  const int REWARD_CHANCE = 1;
 
+  // Local parameters
   const bool debug = global_debug;
-  
+  const int winner_reward = REWARD_CHANCE;
+    
   // Loop over all food sources
   for (fs_idx = 0; fs_idx < food_list.size(); fs_idx++) {
     fs = food_list[fs_idx];
@@ -432,7 +436,7 @@ void food_sources_interactions() {
 
     // Antagonisms
     if (enable_antagonism) {
-      
+
       // For each bacteria, check all other bacteria at this food
       // source. If it antagonizes any, it kills it and either
       // reproduces automatically or gets a "free" chance to do so
@@ -452,11 +456,22 @@ void food_sources_interactions() {
                 bac2->isAlive = false;
                 
                 // Spoils of combat!
+                if (winner_reward == REWARD_AUTOMATIC) {
+                  
+                  // Simplest: automatically reproduce
+                  add_bacterium(bac->strain, bac->x, bac->y);
                 
-                // Simplest mode: automatically reproduce
-                add_bacterium(bac->strain, bac->x, bac->y);
+                } else if (winner_reward == REWARD_CHANCE) {
                 
+                  // Better: give the bacterium a "free" chance to reproduce
+                  if (randreal() <= bac->strain->growth_rate) {
+                    add_bacterium(bac->strain, bac->x, bac->y);
+                  }
                 
+                } else {
+                  printf("ERROR: unrecognized winner reward: %i\n", winner_reward);
+                  exit(1);
+                }
                 
               }
               
@@ -467,7 +482,7 @@ void food_sources_interactions() {
       }
 
       // Cleanup the carnage at this food source
-      // (won't eliminate the bacteria from the global list yet though)
+      // (doesn't eliminate the bacteria from the global list yet)
       idx2 = 0;
       size = fs->bacteriaHere.size();
       for (i = 0; i < size; i++) {
