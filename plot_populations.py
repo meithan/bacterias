@@ -31,6 +31,7 @@ plt.ion()
 
 plt.figure()
 plt.plot(cycles, total_population, "-", color="blue")
+plt.title("Total bacteria population (blue) and food sources (orange)")
 plt.xlabel("Cycles")
 plt.ylabel("Total population")
 plt.grid()
@@ -41,9 +42,10 @@ ax2.set_ylabel("Number of food sources")
 
 plt.figure()
 for i in range(num_strains):
-  plt.plot(cycles, strain_populations[i], "-", lw=1.0)
+  plt.plot(cycles, strain_populations[i], "-", lw=1.0, label="strain %i"%(i+1))
 plt.xlabel("Cycles")
 plt.ylabel("Strain populations")
+plt.title("Individual strain populations")
 plt.grid()
 #plt.savefig("test2.png")
 
