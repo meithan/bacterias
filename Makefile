@@ -2,8 +2,8 @@
 COMPILER= g++
 
 # User compiler flags
-USER_FLAGS = -g -Wall -pedantic
-#USER_FLAGS= -O3
+#USER_FLAGS = -g -Wall -pedantic
+USER_FLAGS= -O3
 
 # ==============================================================================
 

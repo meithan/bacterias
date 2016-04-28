@@ -40,6 +40,11 @@ class FoodSource {
     bacteriaHere.clear();
     bacteriaHere.reserve(64);   // for faster future use
   }
+  
+  // Returns a string representation of the food source in the provided char*
+  void repr(char* retbuf) {
+    sprintf(retbuf, "Food source at (%i,%i)", x, y);
+  }
  
 };
   
