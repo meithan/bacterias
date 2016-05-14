@@ -1,10 +1,11 @@
 // Bacterial coexistence simulation
-#include <iostream>
-#include <fstream>
+#include <math.h>
 #include <stdio.h>
 #include <string.h>
 #include <string>
 #include <time.h>
+#include <iostream>
+#include <fstream>
 #include <vector>
 #include "Bacterium.h"
 #include "Strain.h"
@@ -98,18 +99,26 @@ void create_strains() {
   double growth;
   int snd_deg, rcv_deg, i;
 
-  fprintf(log_file, ">> Reading strain data from \"%s\" ...\n", strains_fname);
+  fprintf(log_file, ">> Loading strains from \"%s\" ...\n", strains_fname);
   infile.open(strains_fname, std::ifstream::in); 
   if (!infile) {
     fprintf(log_file, "ERROR: could not open file\n");
     exit(1);
+  }
+
+  if (enable_antagonism) {
+    fprintf(log_file, "Ignoring sender/receiver degrees (will compute them from the antagonisms table)\n");
   }
   
   getline(infile, str_buf);     // skip header
   i = 0;
   while(!infile.eof() && i < num_strains) {
     infile >> str_buf >> name >> growth >> rcv_deg >> snd_deg;
-    strains[i] = new Strain(i, name, growth, global_death_rate, snd_deg, rcv_deg);
+    if (enable_antagonism) {
+      strains[i] = new Strain(i, name, growth, global_death_rate, 0, 0);
+    } else {
+      strains[i] = new Strain(i, name, growth, global_death_rate, snd_deg, rcv_deg);
+    }
 //    printf("%s %f %i %i\n",  strains[i]->name.c_str(), strains[i]->growth_rate, strains[i]->receiver_degree, strains[i]->sender_degree);
     i++;
   }
@@ -149,36 +158,26 @@ void load_antagonisms() {
     i++;
   }
   
-  // Check sender degrees
-  fprintf(log_file, "Checking sender degrees ... ");
+  // Compute sender degrees
+  fprintf(log_file, "Computing sender degrees ...\n");
   int deg;
   for (i = 0; i < num_strains; i++) {
     deg = 0;
     for (j = 0; j < num_strains; j++) {
-//      printf("%d ", antagonism[i][j]);
       if (antagonisms[i][j]) deg++;
     }
-    if (deg != strains[i]->sender_degree) {
-      fprintf(log_file, "\nError: stored sender degree (%d) of strain %i (%s) does not match that from antagonism table (%d)\n", strains[i]->sender_degree, strains[i]->ID, strains[i]->name.c_str(), deg);
-      exit(1);
-    }
+    strains[i]->sender_degree = deg;
   }
-  fprintf(log_file, "OK\n");
 
-  // Check receiver degrees
-  fprintf(log_file, "Checking receiver degrees ... ");
+  // Compute receiver degrees
+  fprintf(log_file, "Computing receiver degrees ...\n");
   for (i = 0; i < num_strains; i++) {
     deg = 0;
     for (j = 0; j < num_strains; j++) {
-//      printf("%d ", antagonisms[i][j]);
       if (antagonisms[j][i]) deg++;
     }
-    if (deg != strains[i]->receiver_degree) {
-      fprintf(log_file, "Error: stored receiver degree (%d) of strain %i (%s) does not match that from antagonism table (%d)\n", strains[i]->receiver_degree, strains[i]->ID, strains[i]->name.c_str(), deg);
-      exit(1);
-    }
+    strains[i]->receiver_degree = deg;
   }
-  fprintf(log_file, "OK\n");
   
 	infile.close();
   
@@ -186,7 +185,7 @@ void load_antagonisms() {
 
 // =====================================================================
 
-// Update the growth rates from the linear growth formula
+// Compute the growth rates from the linear growth formula
 void compute_growth_rates() {
   int i;
   for (i = 0; i < num_strains; i++) {
@@ -194,7 +193,6 @@ void compute_growth_rates() {
     if (strains[i]->growth_rate < 0) {
       fprintf(log_file, "ERROR: negative growth rate for strain %i (%s)\n", strains[i]->ID, strains[i]->name.c_str());
     }
-    fprintf(log_file, "%s | %i -> %f\n", strains[i]->name.c_str(), strains[i]->sender_degree, strains[i]->growth_rate);
   }
   
 }
@@ -796,6 +794,7 @@ int main (int argc, char** argv) {
   sprintf(strbuf, ">> RNG seed: %u\n", global_seed); log(strbuf);
   
   // Create strains using data from file
+  log(">> Loading strains ...\n");
   create_strains();
   
   // Load antagonism matrix (if applicable)
@@ -812,6 +811,24 @@ int main (int argc, char** argv) {
   } else {
     log(">> Computing growth rates from sender degrees ...\n");
     compute_growth_rates();
+  }
+  
+  // Report strains
+  log(">> Loaded strains:\n");
+  log("(name | sender degree | receiver degree | growth rate)\n");
+  int max_length = 0;
+  int max_size = 0;
+  for (int i = 0; i < num_strains; i++) {
+    if (strains[i]->name.length() > max_length)
+      max_length = strains[i]->name.length();
+    if (strains[i]->sender_degree > max_size)
+      max_size = strains[i]->sender_degree;
+    if (strains[i]->receiver_degree > max_size)
+      max_size = strains[i]->receiver_degree;      
+  }
+  max_size = int(log10(max_size))+1;
+  for (int i = 0; i < num_strains; i++) {
+    sprintf(strbuf, "%-*s | %*i | %*i | %.6f\n", max_length, strains[i]->name.c_str(), max_size, strains[i]->sender_degree, max_size, strains[i]->receiver_degree, strains[i]->growth_rate); log(strbuf);
   }
   
   // Create starting bacteria
