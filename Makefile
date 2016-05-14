@@ -9,7 +9,7 @@ USER_FLAGS= -O3
 
 LDFLAGS= 
 CCFLAGS= $(USER_FLAGS)
-PROGRAMS= bacterias.exe
+PROGRAMS= bacterias
 
 # ==============================================================================
 

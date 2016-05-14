@@ -47,7 +47,7 @@ run.dat
 # Filename of the strains file
 # This file must have one strain per line with the following fields
 # separated by whitespace:
-# strain name | growth chance | sender degree | receiver degree
+# id (ignored) | strain name | growth chance | receiver degree | sender degree
 strains.dat
 
 ########################################
